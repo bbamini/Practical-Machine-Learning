@@ -1,0 +1,108 @@
+---
+title: "Practical Machine Learning Course Project"
+author: "Bamini Balaji"
+date: "June 18, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Background
+
+People regularly quantify how much of a particular activity they do, but they rarely quantify how well they do it. The goal of this project is to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants to predict the manner in which they did the exercise. 
+
+
+## Getting and Cleaning Data
+
+
+```{r, echo = FALSE, results="hide", warning=FALSE, message=FALSE}
+train_data <- read.csv("C:/Users/bamini/Documents/Coursera/Practical_Machine_Learning/Course Project/pml-training.csv", na.strings = c("NA","#DIV/0!"))
+#classes <- unname(sapply(train_data[,1:59], class))
+test_data <- read.csv("C:/Users/bamini/Documents/Coursera/Practical_Machine_Learning/Course Project/pml-testing.csv", na.strings = c("NA","#DIV/0!"))
+library(caret)
+library(randomForest)
+library(e1071)
+library(rpart)
+library(rattle)
+```
+
+The raw data for the [training set](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv) and [testing set](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv) have been imported as variables train_data and test_data such that values "#DIV/0!" were coerced to NA. 
+
+Let's remove columns containing NA values and ensure that training data set has the same column classes testing data set.
+
+#### Removing columns with NA
+```{r, echo=TRUE}
+train_data <- train_data[(sapply(train_data, function(x) !any(is.na(x))))]
+test_data <- test_data[(sapply(test_data, function(x) !any(is.na(x))))]
+```
+
+#### Removing ID, timestamp and window columns in the training and testing data sets.
+```{r, echo = TRUE}
+train_data <- train_data[,c(2, 8:60)]
+test_data <- test_data[,c(2, 8:59)]
+```
+
+#### Matching variable classes between training and testing data sets
+```{r, echo=TRUE}
+wrongclass <- which(sapply(train_data[, 1:53], class) != sapply(test_data[, 1:53], class))
+sapply(wrongclass, function(x) class(train_data[,x]))
+sapply(wrongclass, function(x) class(test_data[,x]))
+test_data[, wrongclass] <- sapply(wrongclass, function(y) as.numeric(test_data[, y]))
+```
+
+
+`r wrongclass` are the columns where there was a mismatch in the classes between train_data (numeric) and test_data (integer). These columns were converted to the numeric class for test_data.
+
+The training data contains `r dim(train_data)[1]` rows and `r dim(train_data)[2]` variables while the testing data contains `r dim(test_data)[1]` rows and `r dim(test_data)[2]` variables. Let's divide the train_data into a training set and a validation set.
+
+
+```{r, echo=TRUE}
+set.seed(123987)
+inTrain <- createDataPartition(y = train_data$classe, p = 0.8, list = FALSE)
+training <- train_data[inTrain, ]
+validation <- train_data[-inTrain, ]
+```
+
+## Model
+
+Let's build a few models using various methods: trees, bagging, random forests and support vector machines.
+
+```{r, echo=TRUE, warning=FALSE, message=FALSE, cache = TRUE}
+set.seed(212)
+fit_trees <- train(classe ~ ., method = "rpart", data = training)
+fit_bagging <- train(classe ~., method = "treebag", data = training)
+fit_rf <- randomForest(classe ~., data = training)
+fit_svm <- svm(classe ~., data = training)
+```
+
+The following figure shows the decision tree generated with the tree based model.
+```{r, echo=FALSE}
+fancyRpartPlot(fit_trees$finalModel)
+```
+
+
+## Cross Validation and Model selection
+
+Now let's evaluate the accuracy of these models at determining type of activity for the validation set.
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+CM_trees <- confusionMatrix(validation$classe, predict(fit_trees, validation))
+CM_bagging <- confusionMatrix(validation$classe, predict(fit_bagging, validation))
+CM_rf <- confusionMatrix(validation$classe, predict(fit_rf, validation))
+CM_svm <- confusionMatrix(validation$classe, predict(fit_svm, validation))
+
+# Calculate model accuracies
+sapply(list(trees = CM_trees, bagging = CM_bagging, RF = CM_rf, SVM = CM_svm), function(x) x$overall["Accuracy"])
+```
+
+This shows that the random forest model and bagging model have greatest accuracy. 
+
+## Prediction
+
+Below are the predictions for activity classification of the test_data using the random forest model and bagging model.
+```{r, echo=TRUE}
+predict(fit_rf, test_data)
+predict(fit_bagging, test_data)
+```
